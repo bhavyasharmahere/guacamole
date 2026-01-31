@@ -1,3 +1,14 @@
+/* Add this to the TOP of your style.css */
+html, body {
+    height: 100%;
+    margin: 0;
+}
+
+main {
+    height: 100vh; /* Takes up 100% of the viewport height */
+    width: 100vw;
+    display: block; /* Ensures it renders as a box */
+}
 :root {
     --text-color: #ffffff;
     --accent: #00ff88;
