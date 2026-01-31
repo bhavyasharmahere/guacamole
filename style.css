@@ -1,0 +1,73 @@
+:root {
+    --text-color: #ffffff;
+    --accent: #00ff88;
+}
+
+body, html {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: #000;
+    color: var(--text-color);
+    scroll-behavior: smooth;
+}
+
+/* Fix the Spline scene to the background */
+.canvas-wrapper {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1; /* Puts it behind everything */
+}
+
+nav {
+    display: flex;
+    justify-content: space-between;
+    padding: 2rem 5%;
+    position: sticky;
+    top: 0;
+}
+
+header {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding-left: 10%;
+    pointer-events: none; /* Allows clicking "through" text to the bot */
+}
+
+header h1, header p, header button {
+    pointer-events: auto; /* Makes only the text/buttons clickable */
+}
+
+h1 { font-size: 4rem; margin-bottom: 0; }
+
+button {
+    width: fit-content;
+    padding: 1rem 2rem;
+    background: var(--accent);
+    border: none;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 20px;
+}
+
+section {
+    padding: 100px 10%;
+    background: rgba(0, 0, 0, 0.8); /* Semi-transparent so bot is visible */
+    min-height: 50vh;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.card {
+    border: 1px solid #333;
+    padding: 40px;
+    background: #111;
+}
