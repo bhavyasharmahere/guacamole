@@ -1,84 +1,148 @@
-/* Add this to the TOP of your style.css */
-html, body {
-    height: 100%;
+/* 1. RESET & BASE STYLES */
+* {
     margin: 0;
+    padding: 0;
+    box-sizing: border-box;
 }
 
-main {
-    height: 100vh; /* Takes up 100% of the viewport height */
-    width: 100vw;
-    display: block; /* Ensures it renders as a box */
-}
 :root {
     --text-color: #ffffff;
     --accent: #00ff88;
+    --bg-dark: rgba(0, 0, 0, 0.8);
 }
 
-body, html {
-    margin: 0;
-    font-family: 'Inter', sans-serif;
+html, body {
+    width: 100%;
+    height: 100%;
     background-color: #000;
     color: var(--text-color);
+    font-family: 'Inter', sans-serif;
     scroll-behavior: smooth;
+    overflow-x: hidden;
 }
 
-/* Fix the Spline scene to the background */
+/* 2. THE 3D BACKGROUND (FIXED) */
 .canvas-wrapper {
     position: fixed;
     top: 0;
     left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 0; /* Base layer */
+}
+
+spline-viewer {
     width: 100%;
     height: 100%;
-    z-index: -1; /* Puts it behind everything */
+    /* Ensures the user can scroll even if touching the bot on mobile */
+    touch-action: pan-y; 
+}
+
+/* 3. THE UI LAYER (NAV, HEADER, SECTIONS) */
+nav, header, section {
+    position: relative;
+    z-index: 10; /* Sits on top of the bot */
 }
 
 nav {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     padding: 2rem 5%;
-    position: sticky;
-    top: 0;
 }
 
+.logo {
+    font-weight: bold;
+    letter-spacing: 2px;
+    color: var(--accent);
+}
+
+.links a {
+    color: white;
+    text-decoration: none;
+    margin-left: 20px;
+    transition: 0.3s;
+}
+
+.links a:hover {
+    color: var(--accent);
+}
+
+/* 4. HERO SECTION */
 header {
     height: 100vh;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding-left: 10%;
-    pointer-events: none; /* Allows clicking "through" text to the bot */
+    padding: 0 10%;
+    /* 'none' lets you interact with the bot in empty spaces */
+    pointer-events: none; 
 }
 
-header h1, header p, header button {
-    pointer-events: auto; /* Makes only the text/buttons clickable */
+header h1 {
+    font-size: clamp(2.5rem, 8vw, 5rem);
+    line-height: 1;
+    margin-bottom: 10px;
 }
 
-h1 { font-size: 4rem; margin-bottom: 0; }
+header p {
+    font-size: 1.2rem;
+    opacity: 0.8;
+}
+
+/* Re-enable clicking for buttons/links inside the header */
+header h1, header p, header button, .links a {
+    pointer-events: auto;
+}
 
 button {
     width: fit-content;
-    padding: 1rem 2rem;
+    padding: 1rem 2.5rem;
     background: var(--accent);
+    color: #000;
     border: none;
     font-weight: bold;
     cursor: pointer;
-    margin-top: 20px;
+    margin-top: 30px;
+    text-transform: uppercase;
+    transition: transform 0.2s;
 }
 
+button:hover {
+    transform: scale(1.05);
+}
+
+/* 5. CONTENT SECTIONS */
 section {
     padding: 100px 10%;
-    background: rgba(0, 0, 0, 0.8); /* Semi-transparent so bot is visible */
-    min-height: 50vh;
+    background: var(--bg-dark);
+    min-height: 100vh;
+    backdrop-filter: blur(10px); /* Modern frosted-glass effect */
 }
 
 .grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 30px;
+    margin-top: 50px;
 }
 
 .card {
     border: 1px solid #333;
     padding: 40px;
     background: #111;
+    transition: 0.3s;
+}
+
+.card:hover {
+    border-color: var(--accent);
+}
+
+/* 6. MOBILE OPTIMIZATIONS */
+@media (max-width: 768px) {
+    header {
+        padding: 0 5%;
+        text-align: center;
+        align-items: center;
+    }
 }
