@@ -7,7 +7,7 @@
 
 :root {
     --text-color: #ffffff;
-    --accent: #00ff88;
+    --accent: #ffae00;
     --bg-dark: rgba(0, 0, 0, 0.8);
 }
 
@@ -130,7 +130,7 @@ section {
 .card {
     border: 1px solid #333;
     padding: 40px;
-    background: #111;
+    background: #1111117e;
     transition: 0.3s;
 }
 
