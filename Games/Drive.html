@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mini Car Game — Python + CSS (single file)</title>
+
+<!-- Brython (runs Python in browser) -->
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython_stdlib.js"></script>
+
+<style>
+  :root{
+    --bg:#111;
+    --card:#171717;
+    --accent:#e43;
+    --muted:#bdbdbd;
+    --ui:#222;
+  }
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
+  body{
+    background: linear-gradient(180deg, #070707 0%, #121212 100%);
+    color:#fff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+
+  .container{
+    width:360px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    padding:14px;
+    border:1px solid rgba(255,255,255,0.03);
+  }
+
+  header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  header h1{font-size:16px;margin:0;font-weight:600}
+  .hud{font-size:13px;color:var(--muted);text-align:right}
+
+  .stage{
+    position:relative;
+    background:linear-gradient(#222,#151515);
+    border-radius:8px;
+    padding:10px;
+    display:flex;
+    justify-content:center;
+  }
+
+  canvas{
+    background: linear-gradient(180deg, #0b0b0b 0%, #0f0f0f 100%);
+    border-radius:6px;
+    width:320px;
+    height:480px;
+    display:block;
+    image-rendering: crisp-edges;
+  }
+
+  .controls{
+    margin-top:10px;
+    display:flex;
+    gap:8px;
+    justify-content:space-between;
+    align-items:center;
+  }
+  .btn{
+    background:var(--ui);
+    color:#fff;
+    padding:8px 10px;
+    border-radius:8px;
+    border:none;
+    cursor:pointer;
+    font-weight:600;
+    font-size:13px;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.3);
+  }
+  .btn:active{transform:translateY(1px)}
+  .small{font-size:12px;padding:6px 8px}
+
+  .overlay{
+    position:absolute;
+    left:50%;
+    top:50%;
+    transform:translate(-50%,-50%);
+    background:linear-gradient(180deg, rgba(0,0,0,0.75), rgba(0,0,0,0.65));
+    padding:18px;
+    border-radius:10px;
+    text-align:center;
+    width:84%;
+    display:none;
+    z-index:10;
+  }
+  .overlay.show{display:block}
+  .overlay h2{margin:4px 0 8px;font-size:18px}
+  .muted{color:var(--muted);font-size:13px}
+  .credits{margin-top:8px;font-size:11px;color:var(--muted);text-align:center}
+  .controls .right {display:flex; gap:8px;}
+  
+  /* simple mobile-friendly responsiveness */
+  @media (max-width:420px){
+    .container{width:92vw}
+    canvas{width:100%;height:auto}
+  }
+</style>
+</head>
+
+<body onload="brython()">
+  <div class="container" id="game-card">
+    <header>
+      <h1>Mini Car Dodger</h1>
+      <div class="hud">
+        Score: <span id="score">0</span>
+        <div class="muted">High: <span id="high">0</span></div>
+      </div>
+    </header>
+
+    <div class="stage">
+      <canvas id="game" width="320" height="480"></canvas>
+
+      <div id="overlay" class="overlay">
+        <h2 id="ov-title">Ready?</h2>
+        <div class="muted" id="ov-text">Use ← / → or A / D to move. Avoid cars!</div>
+        <div style="margin-top:12px;">
+          <button id="startBtn" class="btn">Start</button>
+          <button id="restartBtn" class="btn small">Reset High Score</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div>
+        <button id="pauseBtn" class="btn small">Pause</button>
+        <button id="muteBtn" class="btn small">Sound: On</button>
+      </div>
+      <div class="right">
+        <div class="muted" style="align-self:center;font-size:13px">Arrows / A D</div>
+      </div>
+    </div>
+
+    <div class="credits">Made with Brython — single HTML file. Persistent high score via localStorage.</div>
+  </div>
+
+<script type="text/python">
+from browser import document, timer, window, html
+import random, math
+
+# --- Configuration ---
+CANVAS_ID = "game"
+SCORE_ID = "score"
+HIGH_ID = "high"
+OVERLAY_ID = "overlay"
+START_BTN = "startBtn"
+RESTART_BTN = "restartBtn"
+PAUSE_BTN = "pauseBtn"
+MUTE_BTN = "muteBtn"
+
+WIDTH = 320
+HEIGHT = 480
+FPS = 60
+SPAWN_RATE = 60  # frames between obstacle spawns (lower => more frequent)
+SPEED_INC_INTERVAL = 300  # frames after which game speed increases
+MAX_OBSTACLES = 6
+
+# --- Game state ---
+ctx = document[CANVAS_ID].getContext("2d")
+score_el = document[SCORE_ID]
+high_el = document[HIGH_ID]
+overlay = document[OVERLAY_ID]
+
+score = 0
+high_score = 0
+running = False
+paused = False
+muted = False
+frame_count = 0
+spawn_timer = 0
+game_interval = None
+
+# --- Player ---
+player = {
+    "w": 46,
+    "h": 70,
+    "x": WIDTH//2 - 46//2,
+    "y": HEIGHT - 90,
+    "speed": 6
+}
+move_left = False
+move_right = False
+
+# --- Obstacles ---
+obstacles = []
+base_speed = 2.6
+
+# --- Storage helpers ---
+def load_high():
+    global high_score
+    try:
+        s = window.localStorage.getItem("mini_car_high")
+        if s:
+            high_score = int(s)
+        else:
+            high_score = 0
+    except Exception:
+        high_score = 0
+    high_el.text = str(high_score)
+
+def save_high():
+    try:
+        window.localStorage.setItem("mini_car_high", str(high_score))
+    except Exception:
+        pass
+
+# --- util drawing ---
+def clear():
+    ctx.clearRect(0, 0, WIDTH, HEIGHT)
+    # simple road stripes
+    ctx.fillStyle = "#0f0f0f"
+    ctx.fillRect(0, 0, WIDTH, HEIGHT)
+    # center dashed line
+    ctx.strokeStyle = "#3a3a3a"
+    ctx.lineWidth = 6
+    ctx.setLineDash([18, 22])
+    ctx.beginPath()
+    ctx.moveTo(WIDTH//2, 0)
+    ctx.lineTo(WIDTH//2, HEIGHT)
+    ctx.stroke()
+    ctx.setLineDash([])
+
+def draw_player():
+    x = player["x"]; y = player["y"]; w = player["w"]; h = player["h"]
+    # body
+    ctx.fillStyle = "#e33"
+    ctx.fillRect(x, y, w, h)
+    # windows
+    ctx.fillStyle = "#cfe"
+    ctx.fillRect(x+6, y+12, w-12, 20)
+    # front highlight
+    ctx.fillStyle = "rgba(255,255,255,0.06)"
+    ctx.fillRect(x, y, w, 8)
+    # wheels
+    ctx.fillStyle = "#111"
+    ctx.fillRect(x+6, y+h-6, 12, 6)
+    ctx.fillRect(x+w-18, y+h-6, 12, 6)
+
+def draw_obstacle(o):
+    ctx.fillStyle = o["color"]
+    ctx.fillRect(o["x"], o["y"], o["w"], o["h"])
+    # windshield strip
+    ctx.fillStyle = "rgba(0,0,0,0.15)"
+    ctx.fillRect(o["x"]+6, o["y"]+8, max(10, o["w"]-12), 10)
+
+def spawn_obstacle():
+    lane_padding = 18
+    w = random.randint(36, 78)
+    x = random.randint(lane_padding, WIDTH - lane_padding - w)
+    # sometimes spawn wide trucks
+    if random.random() < 0.08:
+        w = random.randint(78, 120)
+        x = random.randint(12, WIDTH - 12 - w)
+    color = random.choice(["#2b8cff", "#f39c12", "#22c55e", "#b347e6", "#f33", "#888"])
+    obstacles.append({"x": x, "y": -random.randint(60,180), "w": w, "h": random.randint(44,90), "speed": base_speed + random.random()*1.6, "color": color})
+
+def clamp(v, a, b):
+    return max(a, min(b, v))
+
+def hit_test(a, b):
+    # axis aligned bounding box
+    return not (a["x"]+a["w"] < b["x"] or a["x"] > b["x"]+b["w"] or a["y"]+a["h"] < b["y"] or a["y"] > b["y"]+b["h"])
+
+def reset_game():
+    global score, frame_count, spawn_timer, obstacles, base_speed
+    score = 0
+    frame_count = 0
+    spawn_timer = 0
+    obstacles = []
+    base_speed = 2.6
+    player["x"] = WIDTH//2 - player["w"]//2
+    score_el.text = "0"
+    overlay.classList.remove("show")
+    document[PAUSE_BTN].text = "Pause"
+
+def game_over():
+    global running, high_score
+    running = False
+    overlay.classList.add("show")
+    document["ov-title"].text = "Game Over"
+    document["ov-text"].text = f"Score: {score}"
+    if score > high_score:
+        high_score = score
+        save_high()
+        high_el.text = str(high_score)
+
+def update():
+    global frame_count, spawn_timer, running, base_speed, score
+    if not running or paused:
+        return
+    frame_count += 1
+    spawn_timer += 1
+
+    # move player
+    if move_left:
+        player["x"] -= player["speed"]
+    if move_right:
+        player["x"] += player["speed"]
+    player["x"] = clamp(player["x"], 6, WIDTH - player["w"] - 6)
+
+    # spawn obstacles
+    if spawn_timer >= max(12, SPAWN_RATE - int(frame_count/200)):
+        spawn_timer = 0
+        if len(obstacles) < MAX_OBSTACLES:
+            spawn_obstacle()
+
+    # gradually increase base speed
+    if frame_count % SPEED_INC_INTERVAL == 0:
+        base_speed += 0.4
+
+    # move obstacles down
+    for o in list(obstacles):
+        o["y"] += o["speed"] + (frame_count/600.0)
+        # simple lateral wobble for variety
+        o["x"] += math.sin((o["y"]+o["x"])/80.0) * 0.6
+        if o["y"] > HEIGHT + 120:
+            obstacles.remove(o)
+            score += 1
+            score_el.text = str(score)
+
+    # collision check
+    pbox = {"x": player["x"], "y": player["y"], "w": player["w"], "h": player["h"]}
+    for o in obstacles:
+        obox = {"x": o["x"], "y": o["y"], "w": o["w"], "h": o["h"]}
+        if hit_test(pbox, obox):
+            game_over()
+            return
+
+    # draw
+    clear()
+    # moving road illusion: draw faint moving lines
+    for i, o in enumerate(obstacles):
+        draw_obstacle(o)
+    draw_player()
+
+# --- Input handling ---
+def on_keydown(evt):
+    global move_left, move_right
+    k = evt.keyCode
+    if k in (37, 65):  # left arrow or 'A'
+        move_left = True
+    elif k in (39, 68):  # right arrow or 'D'
+        move_right = True
+    elif k == 32:  # space to pause / resume
+        toggle_pause()
+    return
+
+def on_keyup(evt):
+    global move_left, move_right
+    k = evt.keyCode
+    if k in (37, 65):
+        move_left = False
+    elif k in (39, 68):
+        move_right = False
+    return
+
+# --- UI actions ---
+def start_clicked(ev):
+    global running, game_interval
+    if not running:
+        reset_game()
+        running = True
+        # start loop via interval
+        if game_interval is not None:
+            timer.clear_interval(game_interval)
+        game_interval = timer.set_interval(update, int(1000/FPS))
+        overlay.classList.remove("show")
+    return False
+
+def restart_clicked(ev):
+    # reset high score
+    global high_score
+    high_score = 0
+    save_high()
+    high_el.text = str(high_score)
+    return False
+
+def toggle_pause(ev=None):
+    global paused
+    if not running:
+        return
+    paused = not paused
+    document[PAUSE_BTN].text = "Resume" if paused else "Pause"
+    if paused:
+        document[OVERLAY_ID].classList.add("show")
+        document["ov-title"].text = "Paused"
+        document["ov-text"].text = "Press Pause / Resume or Space to continue"
+    else:
+        document[OVERLAY_ID].classList.remove("show")
+    return False
+
+def toggle_mute(ev):
+    global muted
+    muted = not muted
+    document[MUTE_BTN].text = "Sound: Off" if muted else "Sound: On"
+    return False
+
+# --- bind events ---
+document.bind("keydown", on_keydown)
+document.bind("keyup", on_keyup)
+document[START_BTN].bind("click", start_clicked)
+document[RESTART_BTN].bind("click", restart_clicked)
+document[PAUSE_BTN].bind("click", lambda ev: toggle_pause())
+document[MUTE_BTN].bind("click", toggle_mute)
+
+# initial overlay text and highscore
+document["ov-title"].text = "Ready?"
+document["ov-text"].text = "Use ←/→ or A/D to move. Avoid other cars."
+overlay.classList.add("show")
+load_high()
+
+# small initial draw
+clear()
+draw_player()
+</script>
+
+</body>
+</html>

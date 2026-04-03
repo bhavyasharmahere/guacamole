@@ -1,0 +1,928 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Helicopter Missions — Single HTML (Brython)</title>
+
+<!-- Brython (client-side Python) -->
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython_stdlib.js"></script>
+
+<style>
+  :root{
+    --bg:#0b1220;
+    --panel:#0f1724;
+    --accent:#28a0ff;
+    --danger:#ff5c6c;
+    --muted:#9aa4b2;
+  }
+  html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial;}
+  body{
+    background: linear-gradient(180deg,#08101a 0%, #061018 100%);
+    color:#eaf4ff;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+
+  .wrap{
+    width:980px;
+    max-width:98vw;
+    display:grid;
+    grid-template-columns: 720px 240px;
+    gap:14px;
+    align-items:start;
+  }
+
+  .panel{
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;
+    padding:12px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+    border:1px solid rgba(255,255,255,0.03);
+  }
+
+  .game-panel{padding:8px}
+  canvas{
+    background: linear-gradient(180deg,#87ceeb 0%, #6fb1e8 50%, #4a9bd6 100%);
+    border-radius:8px;
+    width:100%;
+    height:auto;
+    display:block;
+    image-rendering: optimizeSpeed;
+    box-shadow: inset 0 -30px 80px rgba(0,0,0,0.25);
+  }
+
+  .hud{
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+    margin-top:8px;
+    font-size:13px;
+    align-items:center;
+  }
+  .stat{
+    background:rgba(0,0,0,0.25);
+    padding:8px 10px;
+    border-radius:8px;
+    min-width:110px;
+    text-align:left;
+  }
+  .controls{display:flex;gap:8px;margin-top:10px}
+  .btn{
+    background:var(--panel);
+    color:#eaf4ff;
+    border:none;
+    padding:8px 10px;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  .missions{display:flex;flex-direction:column;gap:8px}
+  .mission{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px}
+  .muted{color:var(--muted);font-size:13px}
+
+  /* right column */
+  .sidebar{height:100%}
+  .section{margin-bottom:12px}
+  .title{font-weight:700;margin-bottom:6px}
+  .mini-map{
+    background:linear-gradient(180deg,#0b1220,#071020);
+    border-radius:8px;
+    padding:8px;
+    height:200px;
+    color:var(--muted);
+    font-size:12px;
+  }
+  .log{background:rgba(255,255,255,0.02);padding:8px;border-radius:8px;height:220px;overflow:auto;font-size:13px}
+  .small{font-size:12px}
+
+  @media (max-width:960px){
+    .wrap{grid-template-columns: 1fr; grid-auto-rows:auto}
+    .game-panel canvas{height:480px}
+  }
+</style>
+</head>
+<body onload="brython()">
+
+<div class="wrap">
+  <div class="panel game-panel">
+    <canvas id="game" width="720" height="480"></canvas>
+
+    <div class="hud">
+      <div class="stat">
+        <div><strong>Mission:</strong> <span id="mission-name">-</span></div>
+        <div class="muted" id="mission-desc">-</div>
+      </div>
+      <div class="stat">
+        <div>Score: <strong id="score">0</strong></div>
+        <div class="muted">High: <span id="high">0</span></div>
+      </div>
+      <div class="stat">
+        <div>Helicopter</div>
+        <div class="muted">Alt: <span id="alt">0</span> | Fuel: <span id="fuel">100</span>%</div>
+        <div class="muted">Ammo: <span id="ammo">200</span> | Rockets: <span id="rockets">6</span></div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="startBtn" class="btn">Start Mission</button>
+      <button id="pauseBtn" class="btn">Pause</button>
+      <button id="restartBtn" class="btn">Reset Progress</button>
+      <div style="margin-left:auto" class="muted small">Controls: WASD / Arrows, Space=MG, F=Rocket, E=Deploy troops, P=Pause</div>
+    </div>
+  </div>
+
+  <div class="panel sidebar">
+    <div class="section">
+      <div class="title">Missions</div>
+      <div class="missions" id="missionsList"></div>
+    </div>
+
+    <div class="section">
+      <div class="title">Mission Objectives</div>
+      <div id="objectives" class="muted small">Select a mission</div>
+    </div>
+
+    <div class="section">
+      <div class="title">Mini Map / Tactical</div>
+      <div id="minimap" class="mini-map">Map shows helicopter (H), friendly troop drops (T), enemy targets (X), and defenses (D).</div>
+    </div>
+
+    <div class="section">
+      <div class="title">Event Log</div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+</div>
+
+<script type="text/python">
+# Helicopter Missions — Single HTML file using Brython
+# Features:
+# - Helicopter movement and altitude
+# - Missions with ground targets, capture zones
+# - Deploy troops to capture ground zones using E
+# - Machine gun (space) and rockets (F)
+# - Enemies and ground defenses, target counter updates
+# - HUD, mini-map, event log, pause/start/reset, persistent mission progress via localStorage
+# - Written for clarity and moderate performance; single canvas
+
+from browser import document, html, timer, window
+import math, random, time
+
+# --- Config ---
+CANVAS_ID = "game"
+WIDTH = 720
+HEIGHT = 480
+FPS = 60
+
+# gameplay parameters
+HELI_MAX_FUEL = 100.0
+HELI_MAX_AMMO = 200
+HELI_MAX_ROCKETS = 6
+HELI_SPEED = 3.2
+HELI_ASCEND = 2.2
+GRAVITY = 0.0  # simplified
+
+TROOP_DEPLOY_RANGE = 120  # distance in px to drop zone
+TROOP_DEPLOY_TIME = 6000  # ms to capture zone once deployed
+TROOP_COUNT_PER_DEPLOY = 8
+
+ROCKET_SPEED = 8
+BULLET_SPEED = 12
+
+ENEMY_SPAWN_INTERVAL = 1400  # ms
+ENEMY_MAX = 8
+
+# --- Elements ---
+canvas = document[CANVAS_ID]
+ctx = canvas.getContext("2d")
+score_el = document["score"]
+high_el = document["high"]
+alt_el = document["alt"]
+fuel_el = document["fuel"]
+ammo_el = document["ammo"]
+rockets_el = document["rockets"]
+mission_name_el = document["mission-name"]
+mission_desc_el = document["mission-desc"]
+missions_list_el = document["missionsList"]
+objectives_el = document["objectives"]
+minimap_el = document["minimap"]
+log_el = document["log"]
+
+start_btn = document["startBtn"]
+pause_btn = document["pauseBtn"]
+restart_btn = document["restartBtn"]
+
+# --- Game state ---
+running = False
+paused = False
+game_interval = None
+enemy_spawn_timer = None
+
+score = 0
+high_score = 0
+
+# Helicopter state
+heli = {
+    "x": WIDTH/2, "y": HEIGHT/3, "w": 46, "h": 18,
+    "vx": 0, "vy": 0, "alt": 300,   # altitude: higher -> safer from ground fire
+    "fuel": HELI_MAX_FUEL,
+    "ammo": HELI_MAX_AMMO,
+    "rockets": HELI_MAX_ROCKETS,
+    "lives": 3,
+    "invuln": 0
+}
+
+# bullets, rockets, enemies, ground targets, troop squads, defenses
+bullets = []
+rockets = []
+enemies = []
+ground_targets = []     # each is a dict with x,y,type,alive
+defenses = []           # AA guns, SAMs etc
+troop_squads = []       # deployed troops capturing zones
+
+frame = 0
+last_time = None
+
+# Missions (example set)
+MISSIONS = [
+    {
+        "id": "m1",
+        "name": "Rescue & Clear",
+        "desc": "Clear 6 enemy outposts and deploy troops to 2 capture zones.",
+        "targets_to_destroy": 6,
+        "zones_to_capture": 2,
+        "map_seed": 42
+    },
+    {
+        "id": "m2",
+        "name": "High-Value Target",
+        "desc": "Destroy enemy convoy (5 units) and neutralize AA defenses.",
+        "targets_to_destroy": 7,
+        "zones_to_capture": 0,
+        "map_seed": 123
+    },
+    {
+        "id": "m3",
+        "name": "Hold the Line",
+        "desc": "Deploy troops to 3 zones and defend them until reinforcements arrive.",
+        "targets_to_destroy": 3,
+        "zones_to_capture": 3,
+        "map_seed": 999
+    },
+]
+
+current_mission = None
+
+# persistent progress
+def load_progress():
+    global high_score
+    try:
+        hs = window.localStorage.getItem("heli_high")
+        high_score = int(hs) if hs else 0
+    except Exception:
+        high_score = 0
+    high_el.text = str(high_score)
+
+def save_progress():
+    try:
+        window.localStorage.setItem("heli_high", str(high_score))
+    except Exception:
+        pass
+
+# Logging utility
+def log(msg):
+    t = time.strftime("%H:%M:%S", time.localtime())
+    entry = f"[{t}] {msg}"
+    node = html.DIV(entry)
+    log_el <= node
+    log_el.scrollTop = log_el.scrollHeight
+
+# --- Map & Entities generation based on seed ---
+def generate_map(seed):
+    random.seed(seed)
+    # clear lists
+    ground_targets.clear()
+    defenses.clear()
+    enemies.clear()
+    troop_squads.clear()
+
+    # place ground targets (enemy outposts, convoys, etc)
+    tcount = current_mission["targets_to_destroy"]
+    for i in range(tcount):
+        x = random.randint(60, WIDTH-60)
+        y = random.randint(HEIGHT//2 + 20, HEIGHT-60)
+        typ = random.choice(["outpost","convoy","tank"])
+        ground_targets.append({"id": f"g{i}", "x": x, "y": y, "type": typ, "alive": True})
+
+    # place capture zones (friendly objectives)
+    zones_needed = current_mission["zones_to_capture"]
+    for z in range(zones_needed):
+        x = random.randint(80, WIDTH-80)
+        y = random.randint(HEIGHT//2 + 40, HEIGHT-40)
+        ground_targets.append({"id": f"z{z}", "x": x, "y": y, "type": "zone", "alive": True, "captured": False})
+
+    # place ground defenses (AA guns) around targets
+    def_count = max(2, tcount//2)
+    for d in range(def_count):
+        x = random.randint(40, WIDTH-40)
+        y = random.randint(HEIGHT//2 + 40, HEIGHT-40)
+        defenses.append({"id": f"d{d}", "x": x, "y": y, "range": 180, "cooldown": 0})
+
+# --- Drawing helpers ---
+def clear():
+    ctx.clearRect(0,0,WIDTH,HEIGHT)
+
+def draw_landscape():
+    # simple ground gradient and some mountains
+    ctx.fillStyle = "#2a5a22"
+    ctx.fillRect(0, HEIGHT*0.55, WIDTH, HEIGHT*0.45)
+    # some random darker blobs for texture
+    for i in range(10):
+        x = (i*97 + frame*3) % WIDTH
+        y = HEIGHT*0.58 + (i%3)*20
+        ctx.fillStyle = "rgba(20,35,20,0.12)"
+        ctx.fillRect(x, y, 80, 18)
+
+def draw_defenses():
+    for d in defenses:
+        x,y = d["x"], d["y"]
+        ctx.fillStyle = "#6b6b6b"
+        ctx.fillRect(x-8, y-8, 16, 16)
+        # small barrel
+        ctx.fillStyle = "#333"
+        ctx.fillRect(x+6, y-2, 12, 4)
+
+def draw_ground_targets():
+    for g in ground_targets:
+        if not g.get("alive", True):
+            continue
+        x,y = g["x"], g["y"]
+        t = g["type"]
+        if t == "outpost":
+            ctx.fillStyle = "#8b0000"
+            ctx.fillRect(x-12,y-12,24,24)
+            ctx.fillStyle = "#222"
+            ctx.fillRect(x-4,y-8,8,8)
+        elif t == "tank":
+            ctx.fillStyle = "#333333"
+            ctx.fillRect(x-14,y-8,28,16)
+            ctx.fillStyle = "#111"
+            ctx.fillRect(x-6,y-10,12,3)
+        elif t == "convoy":
+            ctx.fillStyle = "#5a2f00"
+            ctx.fillRect(x-12,y-8,24,16)
+        elif t == "zone":
+            # capture zone: circle
+            cap = g.get("captured", False)
+            ctx.beginPath()
+            ctx.arc(x,y,18,0,2*math.pi)
+            ctx.fillStyle = "#1f5f2a" if cap else "#004e7f"
+            ctx.fill()
+            ctx.fillStyle = "#fff"
+            ctx.fillText("Z", x-4, y+4)
+
+def draw_enemies():
+    for e in enemies:
+        ctx.fillStyle = "#7b1f1f"
+        ctx.fillRect(e["x"]-6,e["y"]-6,12,12)
+        if e.get("type") == "aa":
+            ctx.fillStyle = "#333"
+            ctx.fillRect(e["x"]-4,e["y"]-12,8,4)
+
+def draw_troops():
+    for t in troop_squads:
+        x,y = t["x"], t["y"]
+        ctx.fillStyle = "#fff"
+        ctx.fillRect(x-3,y-3,6,6)
+
+def draw_heli():
+    x,y = heli["x"], heli["y"]
+    w,h = heli["w"], heli["h"]
+    # body
+    ctx.save()
+    ctx.translate(x,y)
+    # rotor blur (simple)
+    ctx.fillStyle = "rgba(0,0,0,0.08)"
+    ctx.fillRect(-32,-12,64,8)
+    # body
+    ctx.fillStyle = "#e1e6ff"
+    ctx.fillRect(-w/2,-h/2,w,h)
+    ctx.fillStyle = "#264bff"
+    ctx.fillRect(-w/4,-h/2, w/2, h/3)
+    # tail
+    ctx.fillStyle = "#cfd6ff"
+    ctx.fillRect(w/2 - 6, -4, 28, 6)
+    ctx.restore()
+
+def draw_bullets():
+    ctx.fillStyle = "#fff8"
+    for b in bullets:
+        ctx.fillRect(b["x"]-2, b["y"]-2, 4, 4)
+
+def draw_rockets():
+    ctx.fillStyle = "#ffcc88"
+    for r in rockets:
+        ctx.fillRect(r["x"]-3,r["y"]-6,6,12)
+
+def draw_hud_overlay():
+    # altitude tick
+    ctx.fillStyle = "rgba(0,0,0,0.35)"
+    ctx.fillRect(8,8,220,60)
+    ctx.fillStyle = "#fff"
+    ctx.fillText(f"Alt: {int(heli['alt'])}  Fuel: {int(heli['fuel'])}%  Ammo: {heli['ammo']}  Rockets: {heli['rockets']}", 16, 30)
+    ctx.fillText(f"Lives: {heli['lives']}  Score: {score}", 16, 48)
+
+# --- Game logic helpers ---
+def spawn_enemy():
+    # spawn small enemy that moves along ground or AA that targets heli
+    if len(enemies) >= ENEMY_MAX:
+        return
+    x = random.randint(40, WIDTH-40)
+    y = random.randint(HEIGHT//2 + 30, HEIGHT-40)
+    typ = random.choice(["infantry", "mobile", "aa"]) if random.random() < 0.8 else "aa"
+    e = {"x": x, "y": y, "vx": random.choice([-0.5,0.5])* (1+random.random()), "type": typ, "fire_cd": random.randint(800,1600)}
+    enemies.append(e)
+
+def fire_defenses():
+    # ground defenses try to hit helicopter if in range
+    for d in defenses:
+        dx = heli["x"] - d["x"]
+        dy = heli["y"] - d["y"]
+        dist = math.hypot(dx,dy)
+        if dist < d["range"] and d["cooldown"] <= 0:
+            # spawn simple enemy projectile as an enemy rocket (slower)
+            vx = dx / dist * 3.5
+            vy = dy / dist * 3.5
+            enemies.append({"x": d["x"], "y": d["y"], "vx": vx, "vy": vy, "type": "aa_proj", "life": 400})
+            d["cooldown"] = 120  # frames
+        d["cooldown"] = max(0, d["cooldown"]-1)
+
+def move_entities(dt):
+    # bullets
+    for b in list(bullets):
+        b["x"] += b["vx"] * dt
+        b["y"] += b["vy"] * dt
+        # out of bounds
+        if b["x"] < -20 or b["x"] > WIDTH+20 or b["y"] < -40 or b["y"] > HEIGHT+40:
+            bullets.remove(b)
+    # rockets
+    for r in list(rockets):
+        r["x"] += r["vx"] * dt
+        r["y"] += r["vy"] * dt
+        if r["x"] < -20 or r["x"] > WIDTH+20 or r["y"] < -40 or r["y"] > HEIGHT+40:
+            rockets.remove(r)
+    # enemies
+    for e in list(enemies):
+        # if it's a projectile (aa_proj)
+        if e.get("type") == "aa_proj":
+            e["x"] += e.get("vx",0) * dt
+            e["y"] += e.get("vy",0) * dt
+            e["life"] -= dt*16
+            if e["life"] <= 0:
+                try: enemies.remove(e)
+                except: pass
+        else:
+            e["x"] += e.get("vx",0) * dt
+            # simple boundary bounce
+            if e["x"] < 20:
+                e["x"] = 20
+                e["vx"] *= -1
+            if e["x"] > WIDTH-20:
+                e["x"] = WIDTH-20
+                e["vx"] *= -1
+
+    # troops movement (just idle / capture)
+    for t in list(troop_squads):
+        if t.get("state") == "moving":
+            # arrive quickly
+            t["progress"] += dt*0.01
+            if t["progress"] >= 1.0:
+                t["state"] = "capturing"
+                t["cap_start"] = time.time()*1000
+        elif t.get("state") == "capturing":
+            # time-based capture
+            elapsed = time.time()*1000 - t["cap_start"]
+            if elapsed >= TROOP_DEPLOY_TIME:
+                # mark associated zone captured
+                zone = t.get("zone")
+                if zone:
+                    zone["captured"] = True
+                    log(f"Troops captured zone {zone['id']}")
+                # remove squad
+                try: troop_squads.remove(t)
+                except: pass
+
+def check_collisions():
+    global score, running, high_score
+    # helicopter hit by enemy projectile or colliding with enemy
+    heli_box = {"x": heli["x"]-heli["w"]/2, "y": heli["y"]-heli["h"]/2, "w": heli["w"], "h": heli["h"]}
+    # enemy projectiles
+    for e in list(enemies):
+        if e.get("type") == "aa_proj":
+            proj_box = {"x": e["x"]-3, "y": e["y"]-3, "w":6,"h":6}
+            if aabb(heli_box, proj_box) and heli["invuln"] <= 0:
+                heli_hit()
+                try: enemies.remove(e)
+                except: pass
+
+    # bullets vs ground targets
+    for b in list(bullets):
+        for g in ground_targets:
+            if not g.get("alive", True):
+                continue
+            if g["type"] == "zone":
+                continue
+            if point_in_rect(b["x"], b["y"], g["x"]-15, g["y"]-15, 30, 30):
+                # destroyed
+                g["alive"] = False
+                try: bullets.remove(b)
+                except: pass
+                score += 1
+                score_el.text = str(score)
+                log(f"Destroyed target {g['id']} ({g['type']})")
+                break
+    # rockets vs ground
+    for r in list(rockets):
+        for g in ground_targets:
+            if not g.get("alive", True):
+                continue
+            if g["type"] == "zone":
+                continue
+            if point_in_rect(r["x"], r["y"], g["x"]-20, g["y"]-20, 40, 40):
+                g["alive"] = False
+                try: rockets.remove(r)
+                except: pass
+                score += 2
+                score_el.text = str(score)
+                log(f"Rocket hit target {g['id']}")
+                break
+
+    # bullets vs enemies
+    for b in list(bullets):
+        for e in list(enemies):
+            if e.get("type") == "aa_proj":
+                continue
+            if point_in_rect(b["x"], b["y"], e["x"]-8, e["y"]-8, 16, 16):
+                try: bullets.remove(b)
+                except: pass
+                try: enemies.remove(e)
+                except: pass
+                score += 1
+                score_el.text = str(score)
+                log("Neutralized infantry/vehicle")
+                break
+
+    # check if mission complete
+    all_targets = [g for g in ground_targets if g["type"] != "zone" and g.get("alive",True)]
+    zones_remaining = [g for g in ground_targets if g["type"]=="zone" and not g.get("captured",False)]
+    # mission success conditions depend on mission
+    if current_mission:
+        # if mission requires zones to capture then check zones_remaining
+        if current_mission["zones_to_capture"] > 0:
+            if len(zones_remaining) == 0 and len(all_targets) <= 0:
+                mission_success()
+        else:
+            if len(all_targets) == 0:
+                mission_success()
+
+def heli_hit():
+    # reduce life, brief invulnerability
+    heli["lives"] -= 1
+    heli["invuln"] = 120  # frames
+    log("Helicopter hit! Lives left: " + str(heli["lives"]))
+    if heli["lives"] <= 0:
+        mission_failed()
+
+def mission_success():
+    global running, high_score
+    running = False
+    if score > high_score:
+        high_score = score
+        save_progress()
+        high_el.text = str(high_score)
+    start_btn.text = "Start Mission"
+    mission_desc_el.text = "Mission complete! Well done."
+    log("Mission completed successfully.")
+    # stop timers
+    stop_timers()
+
+def mission_failed():
+    global running
+    running = False
+    start_btn.text = "Start Mission"
+    mission_desc_el.text = "Mission failed. Try again."
+    log("Mission failed.")
+    stop_timers()
+
+def stop_timers():
+    global game_interval, enemy_spawn_timer
+    if game_interval:
+        timer.clear_interval(game_interval)
+        game_interval = None
+    if enemy_spawn_timer:
+        timer.clear_timeout(enemy_spawn_timer)
+        enemy_spawn_timer = None
+
+# --- Utilities ---
+def aabb(a,b):
+    return not (a["x"]+a["w"] < b["x"] or a["x"] > b["x"]+b["w"] or a["y"]+a["h"] < b["y"] or a["y"] > b["y"]+b["h"])
+
+def point_in_rect(px,py,rx,ry,rw,rh):
+    return px >= rx and px <= rx+rw and py >= ry and py <= ry+rh
+
+def nearest_zone_to(x,y):
+    zones = [g for g in ground_targets if g["type"]=="zone" and not g.get("captured",False)]
+    if not zones:
+        return None
+    zones.sort(key=lambda z: (z["x"]-x)**2 + (z["y"]-y)**2)
+    return zones[0]
+
+# --- Input handling ---
+keys = {"left":False, "right":False, "up":False, "down":False, "fire":False, "rocket":False, "deploy":False}
+
+def on_keydown(evt):
+    k = evt.keyCode
+    if k in (37,65): keys["left"] = True
+    if k in (39,68): keys["right"] = True
+    if k in (38,87): keys["up"] = True
+    if k in (40,83): keys["down"] = True
+    if k == 32: keys["fire"] = True
+    if k == 70: keys["rocket"] = True
+    if k == 69: keys["deploy"] = True
+    if k == 80: toggle_pause()
+    return
+
+def on_keyup(evt):
+    k = evt.keyCode
+    if k in (37,65): keys["left"] = False
+    if k in (39,68): keys["right"] = False
+    if k in (38,87): keys["up"] = False
+    if k in (40,83): keys["down"] = False
+    if k == 32: keys["fire"] = False
+    if k == 70: keys["rocket"] = False
+    if k == 69: keys["deploy"] = False
+    return
+
+document.bind("keydown", on_keydown)
+document.bind("keyup", on_keyup)
+
+# --- Player actions ---
+last_fire = 0
+fire_cooldown = 80  # ms
+def fire_machine_gun():
+    global last_fire
+    now = int(time.time()*1000)
+    if now - last_fire < fire_cooldown:
+        return
+    if heli["ammo"] <= 0:
+        return
+    last_fire = now
+    # bullets travel forward based on altitude and heli facing (straight up in screen y)
+    b = {"x": heli["x"], "y": heli["y"]-10, "vx": 0, "vy": -BULLET_SPEED, "owner":"player"}
+    bullets.append(b)
+    heli["ammo"] -= 1
+    ammo_el.text = str(int(heli["ammo"]))
+
+def fire_rocket():
+    if heli["rockets"] <= 0: return
+    # spawn rocket moving forward
+    r = {"x": heli["x"], "y": heli["y"]-8, "vx": 0, "vy": -ROCKET_SPEED}
+    rockets.append(r)
+    heli["rockets"] -= 1
+    rockets_el.text = str(heli["rockets"])
+    log("Fired rocket")
+
+def deploy_troops():
+    # drop troops to nearest zone if in range
+    zone = nearest_zone_to(heli["x"], heli["y"]+ (heli["alt"]/10))
+    if not zone:
+        log("No capture zones remain.")
+        return
+    dx = zone["x"] - heli["x"]
+    dy = zone["y"] - heli["y"]
+    dist = math.hypot(dx, dy)
+    if dist > TROOP_DEPLOY_RANGE:
+        log("Too far from zone to deploy troops (move closer).")
+        return
+    # consume one deployment (we can allow multiple; for now limit to 3)
+    if heli.get("deploys", None) is None:
+        heli["deploys"] = 3
+    if heli["deploys"] <= 0:
+        log("No troop deployments left.")
+        return
+    heli["deploys"] -= 1
+    # create squad that moves to zone then captures
+    squad = {"x": heli["x"], "y": heli["y"]+16, "zone": zone, "state":"moving", "progress":0.0}
+    troop_squads.append(squad)
+    log(f"Deployed troops to {zone['id']} (will capture in {int(TROOP_DEPLOY_TIME/1000)}s)")
+    # consume small fuel cost
+    heli["fuel"] = max(0, heli["fuel"]-2)
+    fuel_el.text = str(int(heli["fuel"]))
+
+# --- Mission selection and UI ---
+def render_missions():
+    missions_list_el.clear()
+    for m in MISSIONS:
+        div = html.DIV(Class="mission")
+        btn = html.BUTTON(m["name"], Class="btn", style={"width":"100%","textAlign":"left"})
+        def make_cb(mm):
+            def cb(evt):
+                select_mission(mm)
+            return cb
+        btn.bind("click", make_cb(m))
+        div <= btn
+        div <= html.DIV(m["desc"], Class="muted small", style={"marginTop":"6px"})
+        missions_list_el <= div
+
+def select_mission(m):
+    global current_mission
+    current_mission = m
+    mission_name_el.text = m["name"]
+    mission_desc_el.text = m["desc"]
+    # set objectives
+    objectives_el.text = f"Destroy {m['targets_to_destroy']} targets. Capture {m['zones_to_capture']} zones."
+    log(f"Selected mission: {m['name']}")
+    # generate map for mission
+    generate_map(m["map_seed"])
+    # update minimap and ground target counters
+    update_minimap()
+
+# --- Minimap and UI updates ---
+def update_minimap():
+    txt = []
+    txt.append(f"H: helicopter")
+    live_targets = [g for g in ground_targets if g.get("alive",True) and g["type"]!="zone"]
+    zones = [g for g in ground_targets if g["type"]=="zone"]
+    txt.append(f"Targets alive: {len(live_targets)}")
+    txt.append(f"Zones remaining: {len([z for z in zones if not z.get('captured',False)])}")
+    txt.append(f"Deploys left: {heli.get('deploys',3)}")
+    minimap_el.text = "\n".join(txt)
+
+# --- Game loop ---
+def update():
+    global frame, last_time
+    if not running or paused:
+        return
+    now = time.time()
+    if last_time is None:
+        last_time = now
+    dt = (now - last_time) * (FPS)  # scale dt to fps units for movement multipliers
+    last_time = now
+    frame += 1
+
+    # controls movement
+    if keys["left"]:
+        heli["x"] -= HELI_SPEED * (1 + (50 - heli["alt"])/200.0)
+    if keys["right"]:
+        heli["x"] += HELI_SPEED * (1 + (50 - heli["alt"])/200.0)
+    if keys["up"]:
+        heli["y"] -= HELI_ASCEND
+        heli["alt"] += 1.2
+    if keys["down"]:
+        heli["y"] += HELI_ASCEND
+        heli["alt"] = max(0, heli["alt"] - 1.2)
+
+    # clamp to screen
+    heli["x"] = max(30, min(WIDTH-30, heli["x"]))
+    heli["y"] = max(40, min(HEIGHT-40, heli["y"]))
+    heli["fuel"] = max(0, heli["fuel"] - 0.01)  # fuel drains slowly
+    fuel_el.text = str(int(heli["fuel"]))
+    alt_el.text = str(int(heli["alt"]))
+
+    # fire actions
+    if keys["fire"]:
+        fire_machine_gun()
+    if keys["rocket"]:
+        # simple one-press behavior
+        if heli["rockets"] > 0:
+            fire_rocket()
+            # prevent continuous rocket spam
+            keys["rocket"] = False
+    if keys["deploy"]:
+        deploy_troops()
+        keys["deploy"] = False
+
+    move_entities(dt)
+    fire_defenses()
+    check_collisions()
+
+    # reduce invuln frames
+    if heli["invuln"] > 0:
+        heli["invuln"] -= 1
+
+    # draw
+    clear()
+    # sky background (a simple gradient handled in CSS; we draw landscape and objects)
+    draw_landscape()
+    draw_ground_targets()
+    draw_defenses()
+    draw_enemies()
+    draw_troops()
+    draw_bullets()
+    draw_rockets()
+    draw_heli()
+    draw_hud_overlay()
+
+    # update UI elements
+    ammo_el.text = str(int(heli["ammo"]))
+    rockets_el.text = str(int(heli["rockets"]))
+    update_minimap()
+
+# --- Enemy spawn scheduling ---
+def schedule_enemy_spawn():
+    # spawn enemy periodically using timer
+    def sp():
+        if running and not paused:
+            spawn_enemy()
+            # occasional heavier enemy
+            if random.random() < 0.12 and len(enemies) < ENEMY_MAX:
+                x = random.randint(40, WIDTH-40)
+                enemies.append({"x": x, "y": HEIGHT//2 + random.randint(40,120), "vx": 0.5 * random.choice([-1,1]), "type":"mobile"})
+            # schedule next
+            global enemy_spawn_timer
+            enemy_spawn_timer = timer.set_timeout(sp, random.randint(700, ENEMY_SPAWN_INTERVAL))
+    # initial
+    enemy_spawn_timer = timer.set_timeout(sp, 500)
+
+# --- UI Button callbacks ---
+def start_clicked(evt):
+    global running, game_interval, last_time
+    if not current_mission:
+        log("Select a mission first.")
+        return
+    if not running:
+        running = True
+        paused = False
+        start_btn.text = "Mission Running..."
+        last_time = None
+        # ensure heli reset
+        heli["x"] = WIDTH/2; heli["y"] = HEIGHT/3; heli["fuel"] = HELI_MAX_FUEL
+        heli["ammo"] = HELI_MAX_AMMO; heli["rockets"] = HELI_MAX_ROCKETS; heli["lives"] = 3; heli["deploys"] = 3
+        bullets.clear(); rockets.clear(); enemies.clear()
+        generate_map(current_mission["map_seed"])
+        # start main loop
+        global game_interval
+        if game_interval:
+            timer.clear_interval(game_interval)
+        game_interval = timer.set_interval(update, int(1000/FPS))
+        schedule_enemy_spawn()
+        log("Mission started.")
+    else:
+        # if running, clicking acts as abort
+        running = False
+        stop_timers()
+        start_btn.text = "Start Mission"
+        log("Mission aborted.")
+    return False
+
+def pause_clicked(evt):
+    toggle_pause()
+    return False
+
+def restart_clicked(evt):
+    # reset saved progress
+    global high_score
+    high_score = 0
+    save_progress()
+    high_el.text = str(high_score)
+    log("Progress reset.")
+    return False
+
+start_btn.bind("click", start_clicked)
+pause_btn.bind("click", pause_clicked)
+restart_btn.bind("click", restart_clicked)
+
+def toggle_pause():
+    global paused, running
+    if not running:
+        return
+    paused = not paused
+    if paused:
+        pause_btn.text = "Resume"
+        log("Game paused")
+    else:
+        pause_btn.text = "Pause"
+        log("Resumed")
+    return
+
+# --- Initial setup ---
+def init():
+    load_progress()
+    render_missions()
+    mission_desc_el.text = "Choose a mission and press Start."
+    # initial draw
+    clear()
+    ctx.fillStyle = "#000000"
+    ctx.fillRect(0,0,WIDTH,HEIGHT)
+    ctx.fillStyle = "#fff"
+    ctx.fillText("Select a mission to begin.", 30, 40)
+
+init()
+</script>
+
+</body>
+</html>

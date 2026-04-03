@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mini Firing Game — Python + CSS (single file)</title>
+
+<!-- Brython -->
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/brython@3.10.5/brython_stdlib.js"></script>
+
+<style>
+  :root{
+    --bg:#070710;
+    --panel:#101018;
+    --accent:#00d1ff;
+    --danger:#ff4d6d;
+    --muted:#bfbfbf;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,Arial;}
+  body{display:flex;align-items:center;justify-content:center;padding:18px;background:linear-gradient(180deg,#020213,#071029);color:#fff;}
+
+  .card{
+    width:360px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+    border-radius:12px;
+    padding:14px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    border:1px solid rgba(255,255,255,0.03);
+  }
+
+  header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+  header h1{font-size:16px;margin:0}
+  .hud{font-size:13px;color:var(--muted);text-align:right}
+  .stage{position:relative;background:linear-gradient(180deg,#061022,#041020);border-radius:8px;padding:10px;display:flex;justify-content:center}
+  canvas{width:320px;height:480px;background:linear-gradient(180deg,#001020,#001018);border-radius:6px;display:block}
+  
+  .controls{margin-top:10px;display:flex;justify-content:space-between;gap:8px;align-items:center}
+  .btn{background:var(--panel);color:#fff;padding:8px 10px;border-radius:8px;border:none;cursor:pointer;font-weight:600;font-size:13px}
+  .small{font-size:12px;padding:6px 8px}
+  .overlay{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(0,0,0,0.7);padding:16px;border-radius:10px;text-align:center;width:84%;display:none;z-index:10}
+  .overlay.show{display:block}
+  .muted{color:var(--muted);font-size:13px}
+  .touch-controls{display:none;gap:8px}
+  .touch-controls button{padding:10px 14px;border-radius:8px;border:none;background:#0b1220;color:#fff;font-weight:700}
+  .lives{color:var(--danger);font-weight:700}
+
+  @media (max-width:420px){
+    .card{width:92vw}
+    canvas{width:100%;height:auto}
+    .touch-controls{display:flex;margin-top:8px;justify-content:center}
+  }
+</style>
+</head>
+
+<body onload="brython()">
+  <div class="card">
+    <header>
+      <h1>Star Shooter</h1>
+      <div class="hud">
+        Score: <span id="score">0</span><br/>
+        <span class="muted">High: <span id="high">0</span></span>
+      </div>
+    </header>
+
+    <div class="stage">
+      <canvas id="game" width="320" height="480"></canvas>
+
+      <div id="overlay" class="overlay">
+        <h2 id="ov-title">Ready?</h2>
+        <div class="muted" id="ov-text">Move with ← / → or A / D. Shoot with Space. Destroy enemies!</div>
+        <div style="margin-top:12px;">
+          <button id="startBtn" class="btn">Start</button>
+          <button id="restartBtn" class="btn small">Reset High</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <div>
+        <button id="pauseBtn" class="btn small">Pause</button>
+        <button id="muteBtn" class="btn small">Sound: On</button>
+      </div>
+      <div class="muted">Lives: <span id="lives">3</span></div>
+    </div>
+
+    <div class="touch-controls" id="touchControls">
+      <button id="leftTouch">◀</button>
+      <button id="fireTouch">●</button>
+      <button id="rightTouch">▶</button>
+    </div>
+
+    <div class="muted" style="margin-top:8px;font-size:12px;text-align:center">Made with Brython — single HTML file.</div>
+  </div>
+
+<script type="text/python">
+from browser import document, timer, window, html
+import random, math, time
+
+# --- Config ---
+CANVAS = "game"
+SCORE_ID = "score"
+HIGH_ID = "high"
+LIVES_ID = "lives"
+OVERLAY_ID = "overlay"
+START_BTN = "startBtn"
+RESTART_BTN = "restartBtn"
+PAUSE_BTN = "pauseBtn"
+MUTE_BTN = "muteBtn"
+
+WIDTH = 320
+HEIGHT = 480
+FPS = 60
+
+ENEMY_SPAWN_BASE = 55   # frames
+MAX_ENEMIES = 7
+BULLET_SPEED = 8
+PLAYER_SPEED = 5
+PLAYER_WIDTH = 36
+PLAYER_HEIGHT = 28
+
+# --- State ---
+ctx = document[CANVAS].getContext("2d")
+score_el = document[SCORE_ID]
+high_el = document[HIGH_ID]
+lives_el = document[LIVES_ID]
+overlay = document[OVERLAY_ID]
+
+score = 0
+high_score = 0
+lives = 3
+running = False
+paused = False
+muted = False
+frame = 0
+spawn_timer = 0
+game_interval = None
+
+# Player
+player = {"x": WIDTH//2 - PLAYER_WIDTH//2, "y": HEIGHT - 70, "w": PLAYER_WIDTH, "h": PLAYER_HEIGHT, "speed": PLAYER_SPEED}
+move_left = False
+move_right = False
+firing = False
+can_shoot = True
+shoot_cooldown = 10  # frames between shots
+
+# Bullets and Enemies
+bullets = []
+enemies = []
+
+# --- Storage ---
+def load_high():
+    global high_score
+    try:
+        s = window.localStorage.getItem("shooter_high")
+        high_score = int(s) if s else 0
+    except Exception:
+        high_score = 0
+    high_el.text = str(high_score)
+
+def save_high():
+    try:
+        window.localStorage.setItem("shooter_high", str(high_score))
+    except Exception:
+        pass
+
+# --- Drawing helpers ---
+def clear():
+    ctx.clearRect(0,0,WIDTH,HEIGHT)
+    # stars background
+    ctx.fillStyle = "#000816"
+    ctx.fillRect(0,0,WIDTH,HEIGHT)
+    # faint stars
+    for i in range(25):
+        x = (i*47 + (frame*2)) % WIDTH
+        y = (i*73 + (frame)) % HEIGHT
+        ctx.fillStyle = "rgba(255,255,255,0.03)"
+        ctx.fillRect(x, y, 1, 1)
+
+def draw_player():
+    x = player["x"]; y = player["y"]; w = player["w"]; h = player["h"]
+    # hull
+    ctx.fillStyle = "#00d1ff"
+    ctx.beginPath()
+    ctx.moveTo(x + w/2, y)
+    ctx.lineTo(x + w, y + h*0.6)
+    ctx.lineTo(x + w*0.7, y + h*0.95)
+    ctx.lineTo(x + w*0.3, y + h*0.95)
+    ctx.lineTo(x, y + h*0.6)
+    ctx.closePath()
+    ctx.fill()
+    # cockpit
+    ctx.fillStyle = "#e6f9ff"
+    ctx.fillRect(x + w*0.35, y + h*0.15, w*0.3, h*0.35)
+
+def draw_bullet(b):
+    ctx.fillStyle = "#fff"
+    ctx.fillRect(b["x"], b["y"], b["w"], b["h"])
+
+def draw_enemy(e):
+    ctx.fillStyle = e["color"]
+    ctx.fillRect(e["x"], e["y"], e["w"], e["h"])
+    # eyes
+    ctx.fillStyle = "#111"
+    ctx.fillRect(e["x"] + e["w"]*0.2, e["y"] + e["h"]*0.2, max(2, e["w"]*0.18), max(2, e["h"]*0.18))
+    ctx.fillRect(e["x"] + e["w"]*0.6, e["y"] + e["h"]*0.2, max(2, e["w"]*0.18), max(2, e["h"]*0.18))
+
+# --- Utils ---
+def clamp(v,a,b): return max(a, min(b, v))
+def aabb(a,b): return not (a["x"]+a["w"] < b["x"] or a["x"] > b["x"]+b["w"] or a["y"]+a["h"] < b["y"] or a["y"] > b["y"]+b["h"])
+
+# --- Game logic ---
+def spawn_enemy():
+    w = random.randint(22, 54)
+    h = random.randint(18, 40)
+    x = random.randint(8, WIDTH - 8 - w)
+    speed = random.uniform(1.2, 2.6) + frame/1800.0
+    color = random.choice(["#ff6b6b", "#ffd166", "#8bd346", "#8ec5ff", "#d48bff"])
+    enemies.append({"x": x, "y": -h - random.randint(0,120), "w": w, "h": h, "speed": speed, "color": color, "dir": random.choice([-1,1])})
+
+def reset_game():
+    global score, frame, spawn_timer, bullets, enemies, lives, player, running
+    score = 0
+    frame = 0
+    spawn_timer = 0
+    bullets = []
+    enemies = []
+    lives = 3
+    player["x"] = WIDTH//2 - player["w"]//2
+    score_el.text = "0"
+    lives_el.text = str(lives)
+    overlay.classList.remove("show")
+    document[PAUSE_BTN].text = "Pause"
+    running = True
+
+def game_over():
+    global running, high_score
+    running = False
+    overlay.classList.add("show")
+    document["ov-title"].text = "Game Over"
+    document["ov-text"].text = f"Score: {score}"
+    if score > high_score:
+        high_score = score
+        save_high()
+        high_el.text = str(high_score)
+
+def update():
+    global frame, spawn_timer, can_shoot, score, lives
+    if not running or paused:
+        return
+    frame += 1
+    spawn_timer += 1
+
+    # input - move player
+    if move_left:
+        player["x"] -= player["speed"]
+    if move_right:
+        player["x"] += player["speed"]
+    player["x"] = clamp(player["x"], 6, WIDTH - player["w"] - 6)
+
+    # shooting
+    if firing and can_shoot:
+        bullets.append({"x": player["x"] + player["w"]/2 - 2, "y": player["y"] - 10, "w": 4, "h": 10, "speed": BULLET_SPEED})
+        can_shoot = False
+        # small cooldown timer via frame
+        timer.set_timeout(lambda : _allow_shoot(), int(1000 * shoot_cooldown / FPS))
+    # spawn enemies
+    spawn_delay = max(18, ENEMY_SPAWN_BASE - int(frame/300))
+    if spawn_timer >= spawn_delay:
+        spawn_timer = 0
+        if len(enemies) < MAX_ENEMIES:
+            spawn_enemy()
+
+    # move bullets
+    for b in list(bullets):
+        b["y"] -= b["speed"]
+        if b["y"] + b["h"] < -10:
+            bullets.remove(b)
+
+    # move enemies
+    for e in list(enemies):
+        e["y"] += e["speed"]
+        # horizontal wobble/slide
+        e["x"] += math.sin((e["y"] + e["x"]) / 40.0) * 0.9 * (0.8 + random.random()*0.4)
+        # if passes bottom -> player loses life
+        if e["y"] > HEIGHT + 20:
+            try:
+                enemies.remove(e)
+            except ValueError:
+                pass
+            lives -= 1
+            lives_el.text = str(lives)
+            if lives <= 0:
+                game_over()
+                return
+
+    # collisions: bullets vs enemies
+    for b in list(bullets):
+        for e in list(enemies):
+            if aabb(b,e):
+                try:
+                    bullets.remove(b)
+                except ValueError:
+                    pass
+                try:
+                    enemies.remove(e)
+                except ValueError:
+                    pass
+                score_tick()
+                break
+
+    # collisions: enemies vs player
+    pbox = {"x": player["x"], "y": player["y"], "w": player["w"], "h": player["h"]}
+    for e in list(enemies):
+        if aabb(pbox, e):
+            try:
+                enemies.remove(e)
+            except ValueError:
+                pass
+            lives -= 1
+            lives_el.text = str(lives)
+            if lives <= 0:
+                game_over()
+                return
+
+    # draw
+    clear()
+    for b in bullets:
+        draw_bullet(b)
+    for e in enemies:
+        draw_enemy(e)
+    draw_player()
+
+def score_tick():
+    global score, high_score
+    score += 1
+    score_el.text = str(score)
+    if score > high_score:
+        high_score = score
+        high_el.text = str(high_score)
+
+def _allow_shoot():
+    global can_shoot
+    can_shoot = True
+
+# --- Input handlers ---
+def on_keydown(evt):
+    global move_left, move_right, firing
+    k = evt.keyCode
+    if k in (37, 65):
+        move_left = True
+    elif k in (39, 68):
+        move_right = True
+    elif k == 32:
+        firing = True
+    elif k == 80: # p pause
+        toggle_pause()
+    return
+
+def on_keyup(evt):
+    global move_left, move_right, firing
+    k = evt.keyCode
+    if k in (37, 65):
+        move_left = False
+    elif k in (39, 68):
+        move_right = False
+    elif k == 32:
+        firing = False
+    return
+
+# touch buttons
+def touch_left(ev): 
+    global move_left
+    move_left = True
+def touch_left_up(ev):
+    global move_left
+    move_left = False
+def touch_right(ev):
+    global move_right
+    move_right = True
+def touch_right_up(ev):
+    global move_right
+    move_right = False
+def touch_fire(ev):
+    global firing
+    # momentary fire
+    firing = True
+    timer.set_timeout(lambda: _stop_fire(), 120)
+
+def _stop_fire():
+    global firing
+    firing = False
+
+# UI actions
+def start_clicked(ev):
+    reset_game()
+    return False
+
+def restart_clicked(ev):
+    global high_score
+    high_score = 0
+    save_high()
+    high_el.text = str(high_score)
+    return False
+
+def toggle_pause(ev=None):
+    global paused
+    if not running:
+        return
+    paused = not paused
+    document[PAUSE_BTN].text = "Resume" if paused else "Pause"
+    if paused:
+        overlay.classList.add("show")
+        document["ov-title"].text = "Paused"
+        document["ov-text"].text = "Press Pause or P to continue"
+    else:
+        overlay.classList.remove("show")
+    return False
+
+def toggle_mute(ev):
+    global muted
+    muted = not muted
+    document[MUTE_BTN].text = "Sound: Off" if muted else "Sound: On"
+    return False
+
+# Bind events
+document.bind("keydown", on_keydown)
+document.bind("keyup", on_keyup)
+document[START_BTN].bind("click", start_clicked)
+document[RESTART_BTN].bind("click", restart_clicked)
+document[PAUSE_BTN].bind("click", lambda ev: toggle_pause())
+document[MUTE_BTN].bind("click", toggle_mute)
+
+# Touch controls (mobile)
+if document.getElementById("touchControls"):
+    document["leftTouch"].bind("touchstart", lambda ev: touch_left(ev))
+    document["leftTouch"].bind("touchend", lambda ev: touch_left_up(ev))
+    document["rightTouch"].bind("touchstart", lambda ev: touch_right(ev))
+    document["rightTouch"].bind("touchend", lambda ev: touch_right_up(ev))
+    document["fireTouch"].bind("touchstart", lambda ev: touch_fire(ev))
+
+# Initial UI
+document["ov-title"].text = "Ready?"
+document["ov-text"].text = "Move ← / → and shoot with Space. Destroy enemies."
+overlay.classList.add("show")
+load_high()
+
+# main loop
+game_interval = timer.set_interval(update, int(1000/FPS))
+</script>
+
+</body>
+</html>
